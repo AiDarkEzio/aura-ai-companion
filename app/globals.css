@@ -1,0 +1,173 @@
+/* globals.css */
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@plugin "@tailwindcss/typography";
+@plugin "tailwind-scrollbar";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  --font-logo: "Fredoka", "Inter", sans-serif;
+  --font-heading: "Inter", sans-serif;
+
+  --height-header: 4rem;
+
+  --color-primary-default: #a855f7;
+  --color-primary-light: #e9d5ff;
+  --color-primary-dark: #7e22ce;
+  --color-primary-foreground: #ffffff;
+
+  --color-accent-default: #ffd68a;
+  --color-accent-light: #fff3d9;
+  --color-accent-dark: #5a4423;
+  --color-accent-foreground: #5a4423;
+
+  --color-success-bg: #e6f4e8;
+  --color-success-fg: #1d7b2a;
+  --color-error-bg: #fdecea;
+  --color-error-fg: #c42d23;
+  --color-warning-bg: #fff8e5;
+  --color-warning-fg: #946800;
+  --color-info-bg: #e6f4fc;
+  --color-info-fg: #1d6fa5;
+
+  --color-dark-bg: #0a0a0f;
+  --color-dark-surface: #1b1a28;
+  --color-dark-surface-hover: #2c2c3a;
+  --color-dark-text-default: #f9fafb;
+  --color-dark-text-secondary: #a9a9b3;
+  --color-dark-border: #2c2c3a;
+  --color-dark-border-subtle: #1b1a28;
+
+  --color-light-bg: #f9fafb;
+  --color-light-surface: #ffffff;
+  --color-light-surface-hover: #f3f4f6;
+  --color-light-text-default: #111827;
+  --color-light-text-secondary: #6b7280;
+  --color-light-border: #e5e7eb;
+  --color-light-border-subtle: #f3f4f6;
+
+  --animate-fade-in-up: fadeInUp 0.8s ease-out forwards;
+  --animate-slide-fade: slideFade 0.5s ease-out forwards;
+  --animate-glow: glow 2.5s ease-in-out infinite;
+  --animate-shine: shine 2s linear infinite;
+
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --transition-timing-function-custom-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  @keyframes fadeInUp {
+    0% {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideFade {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes glow {
+    0%,
+    100% {
+      box-shadow: 0 0 10px -5px var(--color-primary-light);
+    }
+    50% {
+      box-shadow: 0 0 20px 0px var(--color-primary-light);
+    }
+  }
+
+  @keyframes shine {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+}
+
+.animate-on-scroll {
+  opacity: 0;
+}
+
+.animate-on-scroll.is-visible {
+  animation: var(--animate-fade-in-up);
+  animation-delay: var(--anim-delay, 0s);
+}
+
+.animate-load-up {
+  opacity: 0;
+  animation: fadeInUp 0.8s ease-out forwards;
+}
+
+
+:root {
+  --color-background: var(--color-light-bg);
+  --color-text: var(--color-light-text-default);
+}
+
+.dark {
+  --color-background: var(--color-dark-bg);
+  --color-text: var(--color-dark-text-default);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+.bg-background,
+.bg-surface,
+.text-foreground {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Custom scrollbar for a polished look */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #4a4a4a; /* A neutral dark gray */
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a; /* Slightly lighter on hover */
+}
+
+/* button {
+  background: transparent; 
+  border: none; 
+  padding: 0; 
+  cursor: pointer;
+} */

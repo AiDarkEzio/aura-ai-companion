@@ -1,0 +1,326 @@
+generator client {
+    provider = "prisma-client-js"
+    output   = "../app/generated/prisma"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id            String    @id @default(cuid())
+    name          String?
+    email         String?   @unique
+    emailVerified DateTime?
+    image         String?
+    username      String?   @unique
+
+    role         Role          @default(USER)
+    profile      Profile?
+    persona      UserPersona?
+    preferences  Preferences?
+    subscription Subscription?
+
+    createdCharacters Character[]     @relation("CharacterCreator")
+    chats             Chat[]
+    characterLikes    CharacterLike[]
+    characterMemories UserCharacterMemory[]
+    accounts Account[]
+    sessions Session[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Account {
+    id                 String    @id @default(cuid())
+    userId             String
+    providerType       String
+    providerId         String
+    providerAccountId  String
+    refreshToken       String?
+    accessToken        String?
+    accessTokenExpires DateTime?
+    createdAt          DateTime  @default(now())
+    updatedAt          DateTime  @updatedAt
+    user               User      @relation(fields: [userId], references: [id])
+
+    @@unique([providerId, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(cuid())
+    userId       String
+    expires      DateTime
+    sessionToken String   @unique
+    accessToken  String   @unique
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+    user         User     @relation(fields: [userId], references: [id])
+}
+
+model VerificationRequest {
+    id         String   @id @default(cuid())
+    identifier String
+    token      String   @unique
+    expires    DateTime
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+
+    @@unique([identifier, token])
+}
+
+model Profile {
+    id            String        @id @default(uuid())
+    fullName      String?
+    preferredName String?
+    bio           String?       @db.Text
+    pronouns      String?
+    accountStatus AccountStatus @default(ACTIVE)
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @updatedAt
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+}
+
+model UserPersona {
+    id                 String  @id @default(uuid())
+    aiTone             String?
+    interests          String? @db.Text
+    userGoals          String? @db.Text
+    communicationStyle String?
+    excludedTopics     String? @db.Text
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+}
+
+model Preferences {
+    id       String  @id @default(uuid())
+    theme    Theme?  @default(SYSTEM)
+    language String? @default("en-us")
+    timezone String?
+    company  String?
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+}
+
+model Subscription {
+    id                   String    @id @default(uuid())
+    currentPlan          PlanType  @default(FREE)
+    nextBillingDate      DateTime?
+    paymentMethod        String?
+    paymentMethodLast4   String?
+    stripeCustomerId     String?   @unique
+    stripeSubscriptionId String?   @unique
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+}
+
+model Scene {
+    id               String   @id @default(uuid())
+    title            String
+    summary          String   @db.Text
+    sceneInstruction String   @db.Text
+    // The first message from the assistant when this scene starts.
+    // Can override the character's default greeting.
+    openingMessage   String?  @db.Text
+    image            String
+    createdAt        DateTime @default(now())
+
+    // A Scene can be applied to many chats
+    chats Chat[]
+}
+
+model Character {
+    id                      String        @id @default(uuid())
+    name                    String
+    description             String?       @db.Text
+    icon                    String
+    image                   String?
+    isActive                Boolean       @default(true)
+    isPublic                Boolean       @default(true)
+    isMainPlatformCharacter Boolean       @default(false)
+    characterType           CharacterType
+    nsfwTendency            NsfwTendency  @default(LOW)
+    systemInstruction       String        @db.Text
+    // The first message the Character sends to the user to start a conversation.
+    greeting                String        @db.Text
+    aiTone                  AITone?
+
+    creator   User?   @relation("CharacterCreator", fields: [creatorId], references: [id])
+    creatorId String?
+
+    chats     Chat[]
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    tags      Tag[]
+    likes     CharacterLike[]
+    // NOTE: These counters are denormalized for performance.
+    // They must be manually updated via transactions when a
+    // new like or chat is created/deleted
+    likeCount Int             @default(0)
+    chatCount Int             @default(0)
+
+    exampleDialogues ExampleDialogue[]
+    userMemories UserCharacterMemory[]
+}
+
+model UserCharacterMemory {
+    userId      String
+    characterId String
+    user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+    memories String[]
+
+    updatedAt DateTime @updatedAt
+
+    @@id([userId, characterId])
+}
+
+model Tag {
+    id         String      @id @default(uuid())
+    name       String      @unique
+    characters Character[]
+}
+
+model CharacterLike {
+    user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId      String
+    character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+    characterId String
+    createdAt   DateTime  @default(now())
+
+    @@id([userId, characterId])
+}
+
+model ExampleDialogue {
+    id            String @id @default(uuid())
+    userInput     String @db.Text
+    modelResponse String @db.Text
+
+    character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+    characterId String
+}
+
+model Chat {
+    id String @id @default(uuid())
+
+    title         String?
+    lastMessageAt DateTime?
+    memorySummary String?   @db.Text
+    chatInstruction String @db.Text
+    openingMessage String? @db.Text
+    isPinned   Boolean @default(false)
+    isArchived Boolean @default(false)
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+    characterId String
+
+    // A Chat can optionally belong to one Scene.
+    // If the Scene is deleted, this field becomes null.
+    scene   Scene?  @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+    sceneId String?
+
+    messages Message[]
+    settings ChatSettings?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([userId, isPinned, lastMessageAt(sort: Desc)])
+    @@index([userId, characterId])
+    @@index([sceneId])
+}
+
+model ChatSettings {
+    id                 String  @id @default(uuid())
+    modelUsed          String?
+    temperature        Float?
+    customInstructions String? @db.Text
+
+    chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+    chatId String @unique
+}
+
+model Message {
+    id      String      @id @default(uuid())
+    content String      @db.Text
+    role    MessageRole
+    sentAt  DateTime    @default(now())
+
+    chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+    chatId String
+
+    rating   MessageRating?
+    feedback String?
+
+    @@index([chatId, sentAt])
+}
+
+enum PlanType {
+    FREE
+    PRO
+    ENTERPRISE
+}
+
+enum CharacterType {
+    COMPANION
+    ASSISTANT
+    MENTOR
+    GAMEMASTER
+    ENTERTAINMENT
+}
+
+enum NsfwTendency {
+    LOW
+    MEDIUM
+    HIGH
+    NONE
+}
+
+enum AccountStatus {
+    ACTIVE
+    SUSPENDED
+    DELETED
+}
+
+enum Theme {
+    LIGHT
+    DARK
+    SYSTEM
+}
+
+enum MessageRole {
+    USER
+    ASSISTANT
+}
+
+enum MessageRating {
+    GOOD
+    BAD
+}
+
+enum Role {
+    USER
+    BETA_TESTER
+    MODERATOR
+    ADMIN
+}
+
+enum AITone {
+    FORMAL
+    CASUAL
+    FRIENDLY
+    HUMOROUS
+    PROFESSIONAL
+}

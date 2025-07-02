@@ -1,0 +1,42 @@
+[
+    {
+        "name": "the-whispering-caverns",
+        "prompt": "Epic fantasy art of a vast, ancient cavern illuminated by glowing, shimmering crystals on the walls and ceiling. In the center, a highly ornate, legendary sword with a glowing gem in its hilt is embedded in a rough stone pedestal. The air is thick with a palpable sense of magic, visible as faint, glowing wisps. The scene is majestic and mysterious, with dramatic cinematic lighting, ultra-detailed."
+    },
+    {
+        "name": "cyber-city-blues",
+        "prompt": "Interior of a grimy, cramped back-alley noodle shop in a futuristic cyberpunk city. Rain streaks down the windows, blurring the vibrant neon signs of the city outside. A gruff, cybernetically enhanced owner stands behind the counter. Holographic koi fish swim through the air just outside the door. The atmosphere is dense, steamy, and shadowy. Style of Blade Runner, neon noir, cinematic, highly detailed."
+    },
+    {
+        "name": "the-midnight-express",
+        "prompt": "A tense scene inside a luxurious, Art Deco-style train car at night. A nervous conductor in a crisp uniform stands in the narrow, richly decorated hallway. Elegant lamps flicker, casting long, dramatic shadows. In the background, worried passengers in 1920s attire peek out from their cabin doors. The atmosphere is claustrophobic and filled with suspense. Agatha Christie-style murder mystery, cinematic, highly detailed."
+    },
+    {
+        "name": "a-rainy-day-at-the-cafe",
+        "prompt": "A warm and cozy café on a rainy day. View from a small wooden table next to a large window with raindrops streaking down the glass. On the table sits an open book and a steaming mug of coffee. An empty chair invites the viewer to sit. The background is filled with bookshelves and soft, warm lighting. The atmosphere is peaceful, comfortable, and inviting. Lo-fi aesthetic, detailed, soft focus."
+    },
+    {
+        "name": "the-gladiators-gambit",
+        "prompt": "A dusty gladiator training yard under the harsh Roman sun. A hardened, scarred, and grizzled Lanista (trainer) stands in the foreground, his expression stern and demanding. He gestures towards a wooden training sword on the ground. In the background, other gladiators spar in the dirt, kicking up dust. The atmosphere is gritty and intense. Cinematic, historical realism, dramatic lighting, highly detailed."
+    },
+    {
+        "name": "the-lost-temple-of-azura",
+        "prompt": "The interior of an ancient, vine-choked jungle temple. Intricate glyphs cover the stone walls. In the center of the chamber, a powerful, ethereal guardian made of pure light and mist floats silently. Beams of sunlight pierce through the jungle canopy above, illuminating the dusty, sacred air. The scene is mysterious, ancient, and magical. Fantasy art, cinematic lighting, volumetric rays, highly detailed."
+    },
+    {
+        "name": "the-abandoned-lighthouse",
+        "prompt": "The dark, circular ground floor room of an old, abandoned stone lighthouse at night during a violent storm. The only light comes from a single oil lantern on a dusty table, its flame flickering wildly and casting long, dancing shadows on the stone walls. Paranormal investigation equipment sits on the table. The atmosphere is tense, spooky, and claustrophobic. Gothic horror, cinematic, high contrast, highly detailed."
+    },
+    {
+        "name": "mischief-at-the-magic-academy",
+        "prompt": "In a whimsical and chaotic magical greenhouse, an eccentric wizard professor with wild hair and spectacles askew holds up a simple flowerpot with a look of theatrical despair. Colorful petunias bloom from the pot where a magical plant should be. The greenhouse is filled with other strange and wondrous magical flora, bubbling potions, and floating motes of light. Whimsical fantasy style, vibrant colors, expressive character, highly detailed."
+    },
+    {
+        "name": "barter-town-trader",
+        "prompt": "Interior of a grimy, post-apocalyptic trading post made from scrap metal. A tough-as-nails trader with a weathered face sits behind a desk made from a rusty car hood, carefully cleaning a rugged firearm. The shelves behind them are filled with salvaged junk, fuel cans, and supplies. Harsh sunlight streams through cracks in the metal walls, illuminating the dusty air. Gritty, realistic, Fallout/Mad Max aesthetic, cinematic, highly detailed."
+    },
+    {
+        "name": "the-urban-druid",
+        "prompt": "A secret, lush green sanctuary hidden between towering modern skyscrapers. In the center of this wild garden stands a serene, modern-day druid with a wise expression, their clothes blending with the natural environment. Sunlight filters down, creating a magical, peaceful atmosphere that contrasts sharply with the cold, imposing city architecture surrounding it. Modern fantasy, magical realism, peaceful, high-contrast, detailed."
+    }
+]

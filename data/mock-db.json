@@ -1,0 +1,45 @@
+{
+    "profile": {
+        "fullName": "Vlad Moroz",
+        "preferredName": "Vlad",
+        "username": "vlad_moroz",
+        "bio": "AI enthusiast and software developer, building the future of human-computer interaction.",
+        "pronouns": "he/him"
+    },
+    "account": {
+        "userId": "u_2J89JSA4GJ",
+        "email": "vlad@workos.com",
+        "emailVerified": true,
+        "dateJoined": "2023-01-15T10:00:00Z",
+        "twoFactorEnabled": false
+    },
+    "persona": {
+        "aiTone": "Friendly and Professional",
+        "interests": "AI, UI/UX Design, Space Exploration",
+        "userGoals": "To brainstorm new project ideas and learn about complex topics.",
+        "communicationStyle": "Concise with an option for detail",
+        "excludedTopics": "Politics"
+    },
+    "preferences": {
+        "theme": "DARK",
+        "language": "en-us",
+        "timezone": "America/New_York",
+        "company": "WorkOS"
+    },
+    "subscription": {
+        "currentPlan": "PRO",
+        "nextBillingDate": "2024-12-01T10:00:00Z",
+        "paymentMethod": "Visa",
+        "paymentMethodLast4": "4242"
+    },
+    "image": [
+        {
+            "name": "default-user-01",
+            "prompt": "A modern, minimalist default user avatar. An abstract, gender-neutral silhouette of a person's head and shoulders. The style is flat design with clean lines and soft, rounded shapes. A simple, monochromatic color scheme using a calming blue-gray on a light, neutral background. Centered icon, vector art, 1:1 aspect ratio."
+        },
+        {
+            "name": "default-user-02",
+            "prompt": "An abstract user avatar representing potential and identity. The silhouette of a gender-neutral human head and shoulders is filled with a vibrant, glowing nebula of deep blues, purples, and shimmering gold. Within the cosmic pattern, faint, glowing lines suggest a unique neural network, symbolizing the user's unique consciousness. The background is a clean, dark space, making the colorful silhouette the central focus. The image evokes a sense of mystery, creativity, and infinite possibility. Digital art, ethereal, high-detail, 1:1 aspect ratio."
+        }
+    ]
+}
