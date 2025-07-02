@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import { feedbackSchema } from "@/lib/zodSchemas";
 import { GEMINI_15_FLASH_MODEL_NAME, generateGeminiSafetyConfig, GetGeminiApiKey } from "@/lib/llm";
 import { generateSceneOpeningMessage } from "@/lib/utils";
+import { extractUserCharacterMemories } from "./characterActions";
 
 interface SendMessageActionProps {
   history: Message[];
@@ -53,12 +54,18 @@ export const sendMessageAction = async ({
     const messageCount = await prisma.message.count({ where: { chatId } });
     isNewChat = messageCount <= 1;
 
-    const chatWithInstruction = await prisma.chat.findUnique({
-      where: { id: chatId, userId },
-      select: { chatInstruction: true },
+    const chatWithDetails = await prisma.chat.findUnique({
+        where: { id: chatId, userId },
+        include: {
+            messages: {
+                orderBy: {
+                    sentAt: 'asc'
+                }
+            }
+        }
     });
-    
-    if (!chatWithInstruction || !chatWithInstruction.chatInstruction) {
+
+    if (!chatWithDetails || !chatWithDetails.chatInstruction) {
       throw new Error("Chat not found or instruction is missing.");
     }
 
@@ -75,7 +82,7 @@ export const sendMessageAction = async ({
 
     const chat = genAI.chats.create({
       model: GEMINI_15_FLASH_MODEL_NAME,
-      config: { safetySettings: generateGeminiSafetyConfig(character.nsfwTendency), ...generationConfig, systemInstruction: chatWithInstruction.chatInstruction },
+      config: { safetySettings: generateGeminiSafetyConfig(character.nsfwTendency), ...generationConfig, systemInstruction: chatWithDetails.chatInstruction },
       history: actualHistory.map((msg) => ({
         role: msg.role,
         parts: [{ text: msg.parts.map((p) => p.text).join(" ") }],
@@ -120,6 +127,12 @@ export const sendMessageAction = async ({
       }
     }
 
+    // After 10-15 messages, trigger summarization and memory extraction
+    if (chatWithDetails.messages.length % 12 === 0) {
+        summarizeChat(chatId);
+        extractUserCharacterMemories({chatId, userId, characterId: character.id});
+    }
+
     return { text: responseText, isNewChat };
   } catch (error: unknown) {
     console.error("Error in sendMessageAction:", error);
@@ -140,6 +153,56 @@ export const sendMessageAction = async ({
     };
   }
 };
+
+export async function summarizeChat(chatId: string) {
+    const userId = await getUserIdFromSession(); 
+    if (!userId) {
+        console.error("SummarizeChat: Unauthorized");
+        return;
+    }
+
+    try {
+        const chat = await prisma.chat.findUnique({
+            where: { id: chatId, userId },
+            include: {
+                messages: {
+                    orderBy: {
+                        sentAt: 'asc'
+                    }
+                }
+            }
+        });
+
+        if (!chat) {
+            console.error("SummarizeChat: Chat not found");
+            return;
+        }
+
+        const conversation = chat.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+        const existingSummary = chat.memorySummary;
+
+        const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
+
+        const prompt = `\nYou are a conversation summarizer.\n${existingSummary ? `The conversation had a previous summary, which is: "${existingSummary}"` : ''}\nBased on the previous summary (if any) and the latest messages, create a new, concise, and neutral summary of the entire conversation.\nThis summary will be used as long-term memory for an AI, so focus on factual information and significant conversational turns.\n\nConversation:\n${conversation}`;
+
+        const result = await genAI.models.generateContent({
+            model: GEMINI_15_FLASH_MODEL_NAME,
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+        });
+
+        const summary = result.text;
+
+        if (summary) {
+            await prisma.chat.update({
+                where: { id: chatId },
+                data: { memorySummary: summary },
+            });
+            console.log(`Chat ${chatId} summarized successfully.`);
+        }
+    } catch (error) {
+        console.error(`Error summarizing chat ${chatId}:`, error);
+    }
+}
 
 export const resumeChat = async (chatId: string) => {
   const userId = await getUserIdFromSession();
@@ -224,6 +287,33 @@ export const startNewChat = async ({ characterId, sceneId }: StartNewChatParams)
     where: { id: characterId },
   });
 
+  // Fetch existing memories for this user-character pair
+  const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
+      where: {
+          userId_characterId: {
+              userId,
+              characterId,
+          },
+      },
+  });
+  const longTermMemories = userCharacterMemory ? userCharacterMemory.memories : [];
+
+  // Fetch the summary of the last chat session, if any
+  const lastChat = await prisma.chat.findFirst({
+      where: {
+          userId,
+          characterId,
+      },
+      orderBy: {
+          lastMessageAt: 'desc',
+      },
+      select: {
+          memorySummary: true,
+      }
+  });
+  const lastChatSummary = lastChat?.memorySummary;
+
+
   const scene = sceneId
     ? await prisma.scene.findUniqueOrThrow({ where: { id: sceneId } })
     : null;
@@ -250,6 +340,16 @@ ${character.aiTone ? `- Character's Tone: ${character.aiTone}` : ''}
     }
   })()
 }
+
+# Long-Term Memory
+You have remembered the following key facts about the user. Weave them into the conversation naturally.
+- Facts: ${longTermMemories.length > 0 ? longTermMemories.join(', ') : 'None yet.'}
+
+${lastChatSummary ? `
+# Previous Conversation Summary
+Here is a summary of your last conversation with the user. Use it to maintain context.
+- Summary: ${lastChatSummary}
+` : ''}
 
 # User Profile & Preferences
 Tailor your conversation to the following user preferences. This is about *how* you interact with them as your character.

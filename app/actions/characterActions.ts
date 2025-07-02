@@ -6,6 +6,8 @@ import { Character, Prisma, Scene  } from "@/app/generated/prisma";
 import { getUserIdFromSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { CharacterSearchFilter } from "@/lib/types";
+import { GoogleGenAI } from "@google/genai";
+import { GEMINI_15_FLASH_MODEL_NAME, GetGeminiApiKey } from "@/lib/llm";
 
 export async function likeCharacterAction(characterId: string) {
   const userId = await getUserIdFromSession();
@@ -256,7 +258,8 @@ export async function getMainCharacter(): Promise<Character | null> {
         isMainPlatformCharacter: true,
       },
     });
-  } catch (error) {
+  }
+  catch (error) {
     console.error("Error fetching main character data:", error);
     throw new Error("Failed to fetch main character data.");
   }
@@ -273,7 +276,8 @@ export async function getCharacter(id: string): Promise<Character | null> {
     }
 
     return await prisma.character.findUnique({ where: { id } });
-  } catch (error) {
+  }
+  catch (error) {
     console.error("Error fetching character data:", error);
     throw new Error("Failed to fetch character data.");
   }
@@ -346,4 +350,91 @@ export async function searchCharacters(
         take: 50,
       });
   }
+}
+
+interface ExtractMemoriesParams {
+  chatId: string;
+  userId: string;
+  characterId: string;
+}
+
+// TODO: also send past user character Memories to the LLM From database that can be use to update prvious memories accroding to chat
+export async function extractUserCharacterMemories({ chatId, userId, characterId }: ExtractMemoriesParams) {
+    console.log(`Starting memory extraction for chat ${chatId}`);
+    try {
+        const chat = await prisma.chat.findUnique({
+            where: { id: chatId, userId },
+            include: {
+                messages: {
+                    orderBy: { sentAt: 'desc' },
+                    take: 20 // Get the last 20 messages for context
+                }
+            }
+        });
+
+        if (!chat || chat.messages.length === 0) {
+            console.log(`Memory extraction skipped for chat ${chatId}: No messages found.`);
+            return;
+        }
+
+        const conversation = chat.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+
+        const existingMemory = await prisma.userCharacterMemory.findUnique({
+            where: { userId_characterId: { userId, characterId } }
+        });
+
+        const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
+
+        const prompt = `
+You are a memory consolidation AI.
+Based on the provided previous memories and the latest conversation, identify new facts about the user and update existing facts if new information contradicts them.
+Output the final, consolidated list of facts as a JSON array of strings.
+
+Previous Memories:
+${existingMemory ? JSON.stringify(existingMemory.memories) : '[]'}
+
+Latest Conversation:
+${conversation}`;
+
+        const result = await genAI.models.generateContent({
+            model: GEMINI_15_FLASH_MODEL_NAME,
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+        });
+
+        const responseText = result.text;
+        if (!responseText) {
+            console.log(`Memory extraction failed for chat ${chatId}: No response from LLM.`);
+            return;
+        }
+
+        let newMemories: string[] = [];
+        try {
+            // The model might return a markdown code block
+            const jsonString = responseText.replace(/```json\n?/, '').replace(/```$/, '');
+            newMemories = JSON.parse(jsonString);
+            if (!Array.isArray(newMemories)) {
+                throw new Error("LLM did not return a valid JSON array.");
+            }
+        } catch (e) {
+            console.error(`Error parsing memories for chat ${chatId}:`, e);
+            return;
+        }
+
+
+        if (newMemories.length > 0) {
+            const updatedMemories = [...new Set(newMemories)]; // Use Set to ensure no duplicates
+
+            await prisma.userCharacterMemory.upsert({
+                where: { userId_characterId: { userId, characterId } },
+                update: { memories: updatedMemories, updatedAt: new Date() },
+                create: { userId, characterId, memories: updatedMemories }
+            });
+            console.log(`Successfully extracted and saved ${newMemories.length} memories for user ${userId} and character ${characterId}.`);
+        } else {
+            console.log(`No new memories to extract for chat ${chatId}.`);
+        }
+
+    } catch (error) {
+        console.error(`Error extracting user memories for chat ${chatId}:`, error);
+    }
 }
