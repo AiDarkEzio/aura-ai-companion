@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { patchBodySchema } from "@/lib/zodSchemas";
 import { revalidatePath } from "next/cache";
 import { UserData, UserUpdatePayload } from "@/lib/types";
-import { PlanType } from "@/app/generated/prisma";
+import { PlanType, User } from "@/app/generated/prisma";
 import { getUserIdFromSession } from "@/lib/auth";
 
 /**
@@ -36,7 +36,7 @@ export async function getUserData(): Promise<UserData | { error: string }> {
     // Reshape the data to match the structure expected by the frontend.
     const formattedUserData: UserData = {
       profile: {
-        fullName: userDataFromDb.profile?.fullName ?? "",
+        fullName: userDataFromDb.name ?? "",
         preferredName: userDataFromDb.profile?.preferredName ?? "",
         username: userDataFromDb.username ?? "",
         bio: userDataFromDb.profile?.bio ?? "",
@@ -62,7 +62,7 @@ export async function getUserData(): Promise<UserData | { error: string }> {
         company: userDataFromDb.preferences?.company ?? "",
       },
       subscription: {
-        currentPlan: userDataFromDb.subscription?.currentPlan ?? PlanType.FREE,
+        currentPlan: userDataFromDb.subscription?.planId ?? PlanType.FREE,
         nextBillingDate: userDataFromDb.subscription?.nextBillingDate?.toISOString() ?? "",
         paymentMethod: userDataFromDb.subscription?.paymentMethod ?? "",
         paymentMethodLast4: userDataFromDb.subscription?.paymentMethodLast4 ?? "",
@@ -81,7 +81,7 @@ export async function getUserData(): Promise<UserData | { error: string }> {
  * @param {UserUpdatePayload} payload The data to update.
  * @returns {Promise<{ success: boolean; error?: string }>} A success or error response.
  */
-export async function updateUserData(payload: UserUpdatePayload) {
+export async function updateUserData(payload: UserUpdatePayload): Promise<{ success: boolean; error?: string; }> {
   const userId = await getUserIdFromSession();
   if (!userId) {
     throw new Error(
@@ -105,17 +105,21 @@ export async function updateUserData(payload: UserUpdatePayload) {
           where: { userId },
           create: {
             userId,
-            fullName: profile.fullName,
             preferredName: profile.preferredName,
             bio: profile.bio,
             pronouns: profile.pronouns,
           },
           update: {
-            fullName: profile.fullName,
             preferredName: profile.preferredName,
             bio: profile.bio,
             pronouns: profile.pronouns,
           },
+        });
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            name: profile.fullName,
+          }
         });
       }
 
@@ -146,5 +150,33 @@ export async function updateUserData(payload: UserUpdatePayload) {
     console.error("Error updating user data:", error);
     // Re-throwing the error allows the client's `toast.promise` to catch it.
     throw new Error("An unexpected error occurred while saving your settings.");
+  }
+}
+
+/**
+ * Fetches the complete user object for the currently authenticated user.
+ * @returns The User object or null if not found or not authenticated.
+ */
+export async function getCurrentUser(): Promise<User | null> {
+  try {
+    const userId = await getUserIdFromSession();
+
+    if (!userId) {
+      console.log("No session found, user is not authenticated.");
+      return null;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      // You can include relations here if needed in the future
+      // include: { profile: true } 
+    });
+
+    return user;
+  } catch (error) {
+    console.error("Error fetching current user:", error);
+    return null;
   }
 }

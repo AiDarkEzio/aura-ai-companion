@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Character } from "@/app/generated/prisma";
 import { sendMessageAction } from "@/app/actions/chat-actions";
-import { useChatHistory } from "@/contexts/ChatHistoryContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { Message } from "@/lib/types";
 
 interface UseChatProps {
@@ -24,7 +24,7 @@ export const useChat = ({
     role: "model",
     parts: [{ text: character.greeting }],
   };
-  const { refreshChatHistory } = useChatHistory();
+  const { refreshChatHistory } = useAppContext();
   const [messages, setMessages] = useState<Message[]>(
     initialMessages.length > 0 ? initialMessages : [initialGreeting]
   );

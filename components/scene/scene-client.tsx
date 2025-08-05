@@ -7,10 +7,10 @@ import { Character, Scene } from "@/app/generated/prisma";
 import { startNewChat } from "@/app/actions/chat-actions";
 import { CharacterSelection } from "@/components/scene/character-selection";
 import { CharacterSearchModal } from "@/components/scene/character-search-modal";
-import { Button } from "@/components/ui/button"; // Assuming you have a Button component. If not, use a styled <button>
+import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { Loader } from "@/components/ui/loader"; // Assuming a Loader component. If not, use a simple spinner div.
+import { useRouter } from "next/navigation";
+import { Loader } from "@/components/ui/loader";
 
 interface SceneClientProps {
   scene: Scene;
@@ -18,10 +18,20 @@ interface SceneClientProps {
 }
 
 export function SceneClient({ scene, suggestedCharacters }: SceneClientProps) {
-  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>( null );
-  const [displayCharacters, setDisplayCharacters] = useState<Character[]>(suggestedCharacters);
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  const [displayCharacters, setDisplayCharacters] =
+    useState<Character[]>(suggestedCharacters);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (window.history.length <= 2) {
+      router.push("/app");
+    } else {
+      router.back();
+    }
+  };
 
   const handleStartScene = () => {
     if (!selectedCharacter) return;
@@ -62,12 +72,12 @@ export function SceneClient({ scene, suggestedCharacters }: SceneClientProps) {
       <div className="relative z-10 flex w-full max-w-4xl flex-col items-center p-4 text-center">
         {/* Back Button */}
         <div className="absolute -top-16 left-4 sm:left-6 md:left-8">
-          <Link
-            href="/discover" // Or wherever you want the back button to go
-            className="flex items-center gap-2 text-dark-text-secondary transition-colors hover:text-dark-text-default"
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-2 text-dark-text-secondary p-1 rounded-lg transition-colors hover:text-dark-text-default hover:cursor-pointer hover:bg-dark-surface-hover/10 dark:hover:bg-light-surface-hover/10"
           >
             <ArrowLeft size={20} />
-          </Link>
+          </button>
         </div>
 
         {/* Scene Details */}

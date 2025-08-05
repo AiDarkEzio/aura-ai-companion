@@ -1,18 +1,18 @@
 // app/actions/chat-actions.ts
-
 "use server";
 
 import { Character, MessageRating, Prisma } from "@/app/generated/prisma";
 import { getUserIdFromSession } from "@/lib/auth";
-import { GoogleGenAI } from "@google/genai";
+import { GenerateContentConfig, GoogleGenAI, Type, } from "@google/genai";
 import { Message, StartNewChatParams } from "@/lib/types";
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { feedbackSchema } from "@/lib/zodSchemas";
 import { GEMINI_15_FLASH_MODEL_NAME, generateGeminiSafetyConfig, GetGeminiApiKey } from "@/lib/llm";
-import { generateSceneOpeningMessage } from "@/lib/utils";
-import { extractUserCharacterMemories } from "./characterActions";
+import { calculateMessageCost, estimateTokenCount, generateSceneOpeningMessage } from "@/lib/utils";
+import { addUserCharacterMemory } from "./characterActions";
+import { generateChatInstruction } from "@/lib/instructions";
 
 interface SendMessageActionProps {
   history: Message[];
@@ -32,10 +32,21 @@ export type ChatWithDetails = Prisma.ChatGetPayload<{
   };
 }>;
 
-// This is the return type of our action. It's either a success or an error object.
 type SendMessageActionResult =
-  | { text?: string; error?: never, isNewChat: boolean }
-  | { text?: never; error: string; isRateLimit?: boolean, isNewChat: boolean };
+  | { text?: string; error?: never; isNewChat: boolean; memory?: string }
+  | {
+      text?: never;
+      error: string;
+      isRateLimit?: boolean;
+      isInsufficientCredits?: boolean;
+      isNewChat: boolean;
+      memory?: never;
+    };
+
+type AIResponse = {
+  reply: string;
+  userCharacterMemory?: string;
+};
 
 export const sendMessageAction = async ({
   history,
@@ -51,94 +62,193 @@ export const sendMessageAction = async ({
   let isNewChat = false;
 
   try {
-    const messageCount = await prisma.message.count({ where: { chatId } });
-    isNewChat = messageCount <= 1;
-
     const chatWithDetails = await prisma.chat.findUnique({
-        where: { id: chatId, userId },
-        include: {
-            messages: {
-                orderBy: {
-                    sentAt: 'asc'
-                }
-            }
-        }
+      where: { id: chatId, userId },
+      include: {
+        messages: {
+          orderBy: { sentAt: "asc" },
+          take: 25,
+        },
+        character: {
+          include: {
+            userMemories: {
+              where: { userId },
+            },
+          },
+        },
+        user: {
+          select: { id: true, profile: true, persona: true, credits: true },
+        },
+      },
     });
 
-    if (!chatWithDetails || !chatWithDetails.chatInstruction) {
-      throw new Error("Chat not found or instruction is missing.");
+    if (!chatWithDetails || !chatWithDetails.chatInstruction || !chatWithDetails.user) {
+      throw new Error( "Chat not found, instruction is missing, or user data is unavailable.");
     }
 
-    const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
-    
-    const generationConfig = {
+    isNewChat = chatWithDetails.messages.length <= 2;
+    const user = chatWithDetails.user;
+    const longTermMemories = chatWithDetails.character.userMemories[0]?.memories || [];
+    const lastChatSummary = chatWithDetails.memorySummary;
+
+    const dynamicInstruction = `
+# Long-Term Memory (Facts about the User)
+You have remembered the following key facts about the user. Weave them into the conversation naturally.
+- Facts: ${ longTermMemories.length > 0 ? longTermMemories.join("; ") : "None yet."}
+
+${lastChatSummary ? `# Conversation Previous Summary
+Here is a summary of your last conversation with the user. Use it to maintain context.
+- Summary: ${lastChatSummary}`: ""}
+
+# User Profile & Preferences
+Tailor your conversation to the following user preferences. This is about *how* you interact with them as your character.
+${user.profile?.preferredName ? `- User's Preferred Name: ${user.profile.preferredName}` : ""}
+${user.persona?.interests ? `- User's Interests (Incorporate these naturally): ${user.persona.interests}` : ""}
+${user.persona?.userGoals ? `- User's Goal for this chat: ${user.persona.userGoals}` : ""}
+${ user.persona?.communicationStyle ? `- User's Preferred Communication Style: ${user.persona.communicationStyle}` : ""}
+${user.persona?.aiTone ? `- User's Preferred Tone to be spoken to in: ${user.persona.aiTone}` : ""}
+${user.persona?.excludedTopics ? `- CRITICAL: Absolutely avoid discussing these topics: ${user.persona.excludedTopics}. This is a strict boundary.`: ""}
+`;
+
+    const systemInstruction = chatWithDetails.chatInstruction.replace(
+      "<{{DYNAMIC_INSTRUCTION}}>",
+      dynamicInstruction
+    );
+
+    const config: GenerateContentConfig = {
+      safetySettings: generateGeminiSafetyConfig(character.nsfwTendency),
+      systemInstruction: systemInstruction,
       temperature: 0.9,
       topK: 1,
       topP: 1,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          reply: {
+            type: Type.STRING,
+            description: `# 'reply' field rules:
+- This field contains your conversational response, spoken as the character "${character.name}".
+- NEVER break character in the 'reply' field. Do not reveal that you are an AI or language model.`,
+          },
+          userCharacterMemory: {
+            type: Type.STRING,
+            description: `# 'userCharacterMemory' field rules:
+1.  Only populate 'userCharacterMemory' if you learn a new, significant, and lasting fact ABOUT THE USER (e.g., their name, a key preference, a major life event).
+2.  Do NOT add memories for trivial things, questions the user asks you, or your own statements.
+3.  If no new significant fact is learned, you MUST return 'userCharacterMemory' as an empty string: "".
+4.  The memory should be a full, self-contained sentence. For example: "The user's favorite color is blue." or "The user has a pet cat named Whiskers."`,
+          },
+        },
+        required: ["reply"],
+        additionalProperties: false,
+      },
     };
-    
+
+    const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
     const actualHistory = history.slice(0, -1);
 
     const chat = genAI.chats.create({
       model: GEMINI_15_FLASH_MODEL_NAME,
-      config: { safetySettings: generateGeminiSafetyConfig(character.nsfwTendency), ...generationConfig, systemInstruction: chatWithDetails.chatInstruction },
+      config,
       history: actualHistory.map((msg) => ({
         role: msg.role,
         parts: [{ text: msg.parts.map((p) => p.text).join(" ") }],
       })),
     });
 
-    const result = await chat.sendMessage({ message });
+    const userNewMessage = { role: "user", parts: [{ text: message }] };
+    const combinedHistory = chat.getHistory();
+    combinedHistory.push(userNewMessage);
+
+    const combinedCountTokensResponse = await genAI.models.countTokens({ model: GEMINI_15_FLASH_MODEL_NAME, contents: combinedHistory });
+    const MESSAGE_COST = calculateMessageCost(combinedCountTokensResponse.totalTokens || estimateTokenCount(JSON.stringify(combinedHistory)));
+
+    if (user.credits < MESSAGE_COST) {
+      return {
+        error: `You need ${MESSAGE_COST} credits to send this message, but you only have ${user.credits}.`,
+        isInsufficientCredits: true,
+        isNewChat: false,
+      };
+    }
+
+    const result = await chat.sendMessage({message});
     const responseText = result.text;
 
     if (!responseText) {
       throw new Error("No response text received from AI");
     }
 
-    await prisma.$transaction([
-      prisma.message.createMany({
-        data: [
-          {
-            chatId: chatId,
-            content: message,
-            role: "USER",
-          },
-          {
-            chatId: chatId,
-            content: responseText,
-            role: "ASSISTANT",
-          },
-        ],
-      }),
-      prisma.chat.update({
-        where: { id: chatId },
-        data: {
-          lastMessageAt: new Date(),
-        },
-      }),
-    ]);
+    let parsedResponse: AIResponse;
+    try {
+      parsedResponse = JSON.parse(responseText) as AIResponse;
+    } catch (e) {
+      console.error( "Failed to parse AI response as JSON. Falling back to raw text.", { responseText, error: e });
+      parsedResponse = { reply: responseText };
+    }
+
+    if (parsedResponse.userCharacterMemory && parsedResponse.userCharacterMemory.trim().length > 0) {
+      console.log( `AI identified a new memory: "${parsedResponse.userCharacterMemory}"` );
+      addUserCharacterMemory(
+        character.id,
+        parsedResponse.userCharacterMemory
+      ).catch((err) =>
+        console.error("Failed to add user character memory in background:", err)
+      );
+    }
 
     if (isNewChat) {
       try {
         await resumeChat(chatId);
-      } catch (error: unknown) {
-        console.log("Error while resumeChat:", error);
+      } catch (err) {
+        console.log("Error generating chat title:", err);
       }
     }
 
-    // After 10-15 messages, trigger summarization and memory extraction
-    if (chatWithDetails.messages.length % 12 === 0) {
-        summarizeChat(chatId);
-        extractUserCharacterMemories({chatId, userId, characterId: character.id});
+    await prisma.$transaction(async (tx) => {
+      await tx.message.create({ data: { chatId, content: message, role: "USER" } });
+
+      const assistantMessage = await tx.message.create({ data: { chatId, content: parsedResponse.reply, role: "ASSISTANT"}});
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          credits: {
+            decrement: MESSAGE_COST,
+          },
+        },
+      });
+
+      await tx.creditTransaction.create({
+        data: {
+          userId: userId,
+          amount: -MESSAGE_COST,
+          type: "MESSAGE_COST",
+          description: `Message to character: ${character.name}`,
+          messageId: assistantMessage.id,
+        },
+      });
+
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { lastMessageAt: new Date() },
+      });
+    });
+
+    if (chatWithDetails.messages.length > 0 && chatWithDetails.messages.length % 12 === 1) {
+      summarizeChat(chatId).catch((err) => console.log("Error summarizing chat:", err));
     }
 
-    return { text: responseText, isNewChat };
+    return {
+      text: parsedResponse.reply,
+      isNewChat,
+      memory: parsedResponse.userCharacterMemory || undefined,
+    };
   } catch (error: unknown) {
     console.error("Error in sendMessageAction:", error);
     const errorMessage =
       error instanceof Error ? error.message : "An unknown error occurred";
-
     if (errorMessage.includes("429") || errorMessage.includes("quota")) {
       return {
         error: "Rate limit exceeded. Please try again in a minute.",
@@ -146,7 +256,6 @@ export const sendMessageAction = async ({
         isNewChat,
       };
     }
-
     return {
       error: "An error occurred while processing your request.",
       isNewChat,
@@ -155,53 +264,65 @@ export const sendMessageAction = async ({
 };
 
 export async function summarizeChat(chatId: string) {
-    const userId = await getUserIdFromSession(); 
-    if (!userId) {
-        console.error("SummarizeChat: Unauthorized");
-        return;
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    console.error("SummarizeChat: Unauthorized");
+    return;
+  }
+
+  try {
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId, userId },
+      include: {
+        messages: { orderBy: { sentAt: "asc" } },
+        character: true,
+        scene: true,
+      },
+    });
+
+    if (!chat) {
+      console.error("SummarizeChat: Chat not found");
+      return;
     }
 
-    try {
-        const chat = await prisma.chat.findUnique({
-            where: { id: chatId, userId },
-            include: {
-                messages: {
-                    orderBy: {
-                        sentAt: 'asc'
-                    }
-                }
-            }
-        });
+    const conversation = chat.messages
+      .map((msg) => `${msg.role}: ${msg.content}`)
+      .join("\n");
+    const existingSummary = chat.memorySummary;
 
-        if (!chat) {
-            console.error("SummarizeChat: Chat not found");
-            return;
-        }
+    const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
 
-        const conversation = chat.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
-        const existingSummary = chat.memorySummary;
+    const prompt = `\nYou are a conversation summarizer.\n${
+      existingSummary
+        ? `The conversation had a previous summary, which is: "${existingSummary}"`
+        : ""
+    }\nBased on the previous summary (if any) and the latest messages, create a new, concise, and neutral summary of the entire conversation.\nThis summary will be used as long-term memory for an AI, so focus on factual information and significant conversational turns.\n\nConversation:\n${conversation}`;
 
-        const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
+    const result = await genAI.models.generateContent({
+      model: GEMINI_15_FLASH_MODEL_NAME,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
 
-        const prompt = `\nYou are a conversation summarizer.\n${existingSummary ? `The conversation had a previous summary, which is: "${existingSummary}"` : ''}\nBased on the previous summary (if any) and the latest messages, create a new, concise, and neutral summary of the entire conversation.\nThis summary will be used as long-term memory for an AI, so focus on factual information and significant conversational turns.\n\nConversation:\n${conversation}`;
+    const summary = result.text;
 
-        const result = await genAI.models.generateContent({
-            model: GEMINI_15_FLASH_MODEL_NAME,
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-        });
-
-        const summary = result.text;
-
-        if (summary) {
-            await prisma.chat.update({
-                where: { id: chatId },
-                data: { memorySummary: summary },
-            });
-            console.log(`Chat ${chatId} summarized successfully.`);
-        }
-    } catch (error) {
-        console.error(`Error summarizing chat ${chatId}:`, error);
+    if (summary) {
+      const newChatInstruction = generateChatInstruction({
+        character: chat.character,
+        scene: chat.scene,
+      });
+      await prisma.chat.update({
+        where: { id: chatId },
+        data: {
+          memorySummary: summary,
+          chatInstruction: newChatInstruction,
+        },
+      });
+    } else {
+      throw new Error("No summary generated by AI");
     }
+  } catch (error) {
+    console.error(`Error summarizing chat ${chatId}:`, error);
+  }
 }
 
 export const resumeChat = async (chatId: string) => {
@@ -220,6 +341,7 @@ export const resumeChat = async (chatId: string) => {
         orderBy: {
           sentAt: "asc",
         },
+        take: 2, // Only need the first couple of messages to generate a title
       },
     },
   });
@@ -229,41 +351,48 @@ export const resumeChat = async (chatId: string) => {
   try {
     const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
 
-    const generationConfig = {
+    const config: GenerateContentConfig = {
       temperature: 1.1,
       topK: 1,
       topP: 1,
       maxOutputTokens: 80,
+      safetySettings: generateGeminiSafetyConfig(chat.character.nsfwTendency),
+      systemInstruction: `
+- You will generate a short title based on the first message a user begins a conversation with.
+- Ensure it is not more than 80 characters long.
+- The title should be a summary of the user's message.
+- Do not use quotes or colons.`,
     };
-    
-    const systemInstruction = `
-    - you will generate a short title based on the first message a user begins a conversation with
-    - ensure it is not more than 80 characters long
-    - the title should be a summary of the user's message
-    - do not use quotes or colons`;
 
     const res = await genAI.models.generateContent({
       model: GEMINI_15_FLASH_MODEL_NAME,
-      contents: `chat: ${JSON.stringify(
-        chat.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }))
-      )}`,
-      config: { safetySettings: generateGeminiSafetyConfig(chat.character.nsfwTendency), ...generationConfig, systemInstruction },
+      config,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Generate a title for a chat that starts with this message: "${
+                chat.messages.find((m) => m.role === "USER")?.content ??
+                chat.messages[1]?.content
+              }"`,
+            },
+          ],
+        },
+      ],
     });
-    if (!res.text) {
-      throw new Error("No title generated by AI");
-    }
+
+    const titleText = res.text;
+    if (!titleText) throw new Error("No title generated by AI");
 
     await prisma.chat.update({
       where: { id: chatId },
-      data: { title: res.text.trim().slice(0, 80) },
+      data: { title: titleText.trim().slice(0, 80) },
     });
 
     revalidatePath(`/chat/${chatId}`);
 
-    return { title: res.text.trim().slice(0, 80) };
+    return { title: titleText.trim().slice(0, 80) };
   } catch (error: unknown) {
     console.error("Error in resumeChat:", error);
     const errorMessage =
@@ -272,7 +401,10 @@ export const resumeChat = async (chatId: string) => {
   }
 };
 
-export const startNewChat = async ({ characterId, sceneId }: StartNewChatParams) => {
+export const startNewChat = async ({
+  characterId,
+  sceneId,
+}: StartNewChatParams) => {
   const userId = await getUserIdFromSession();
   if (!userId) {
     redirect("/login");
@@ -287,96 +419,21 @@ export const startNewChat = async ({ characterId, sceneId }: StartNewChatParams)
     where: { id: characterId },
   });
 
-  // Fetch existing memories for this user-character pair
-  const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
-      where: {
-          userId_characterId: {
-              userId,
-              characterId,
-          },
-      },
-  });
-  const longTermMemories = userCharacterMemory ? userCharacterMemory.memories : [];
-
-  // Fetch the summary of the last chat session, if any
-  const lastChat = await prisma.chat.findFirst({
-      where: {
-          userId,
-          characterId,
-      },
-      orderBy: {
-          lastMessageAt: 'desc',
-      },
-      select: {
-          memorySummary: true,
-      }
-  });
-  const lastChatSummary = lastChat?.memorySummary;
-
-
   const scene = sceneId
     ? await prisma.scene.findUniqueOrThrow({ where: { id: sceneId } })
     : null;
 
-  const chatInstruction = `
-# Core Identity
-You are an AI companion. Your primary goal is to engage the user in a compelling, immersive, and entertaining conversation.
-
-# Character Persona
-You must act as the character "${character.name}".
-- Character's Core Instructions: ${character.systemInstruction}
-${character.aiTone ? `- Character's Tone: ${character.aiTone}` : ''}
-- Content Style (NSFW Tendency): ${
-  (() => {
-    switch (character.nsfwTendency) {
-      case 'HIGH':
-        return 'You are permitted to engage in explicit and graphic mature themes, following the user\'s lead.';
-      case 'MEDIUM':
-        return 'You can be direct with mature themes and use suggestive language, but avoid being overly graphic.';
-      case 'LOW':
-        return 'You can subtly hint at mature or romantic themes but must avoid explicit content.';
-      default:
-        return 'Strictly avoid all NSFW, mature, or suggestive topics.';
-    }
-  })()
-}
-
-# Long-Term Memory
-You have remembered the following key facts about the user. Weave them into the conversation naturally.
-- Facts: ${longTermMemories.length > 0 ? longTermMemories.join(', ') : 'None yet.'}
-
-${lastChatSummary ? `
-# Previous Conversation Summary
-Here is a summary of your last conversation with the user. Use it to maintain context.
-- Summary: ${lastChatSummary}
-` : ''}
-
-# User Profile & Preferences
-Tailor your conversation to the following user preferences. This is about *how* you interact with them as your character.
-${user.profile?.preferredName || user.profile?.fullName ? `- User's Preferred Name: ${user.profile.preferredName ? user.profile.preferredName : user.profile.fullName}` : ''}
-${user.persona?.interests ? `- User's Interests (Incorporate these naturally): ${user.persona.interests}` : ''}
-${user.persona?.userGoals ? `- User's Goal for this chat: ${user.persona.userGoals}` : ''}
-${user.persona?.communicationStyle ? `- User's Preferred Communication Style: ${user.persona.communicationStyle}` : ''}
-${user.persona?.aiTone ? `- User's Preferred Tone to be spoken to in: ${user.persona.aiTone}` : ''}
-${user.persona?.excludedTopics ? `- CRITICAL: Absolutely avoid discussing these topics: ${user.persona.excludedTopics}. This is a strict boundary.` : ''}
-
-${scene ? `
-# Current Scene Context
-You and the user are currently in the following scene. Your responses must be grounded in this context.
-- Scene Title: ${scene.title}
-- Your Role & Instructions for this Scene: ${scene.sceneInstruction}
-` : `
-# Scene Context
-There is no specific scene. The conversation is open-ended.
-`}
-
-# Final Rules
-- NEVER break character. Do not reveal that you are an AI or language model.
-- Your responses should be natural and conversational, consistent with the persona of "${character.name}".
-`.trim();
+  const chatInstruction = generateChatInstruction({
+    character,
+    scene,
+  });
 
   const openingMessage = scene
-    ? await generateSceneOpeningMessage({character, scene, userName: user.profile?.preferredName || user.profile?.fullName || user.name || "User"})
+    ? await generateSceneOpeningMessage({
+        character,
+        scene,
+        userName: user.profile?.preferredName || user.name || "User",
+      })
     : character.greeting;
 
   const newChat = await prisma.$transaction(async (tx) => {
@@ -399,7 +456,6 @@ There is no specific scene. The conversation is open-ended.
       },
     });
 
-    // Increment the character's chat count
     await tx.character.update({
       where: { id: characterId },
       data: { chatCount: { increment: 1 } },
@@ -529,49 +585,49 @@ export async function deleteChatAction(chatId: string, characterId: string) {
   }
 }
 
-export async function updateChatTitleAction(
-  chatId: string,
-  characterId: string,
-  title: string
-) {
-  const userId = await getUserIdFromSession();
-  if (!userId) {
-    return { error: "Unauthorized" };
-  }
+// export async function updateChatTitleAction(
+//   chatId: string,
+//   characterId: string,
+//   title: string
+// ) {
+//   const userId = await getUserIdFromSession();
+//   if (!userId) {
+//     return { error: "Unauthorized" };
+//   }
 
-  const trimmedTitle = title.trim();
-  if (trimmedTitle.length === 0) {
-    return { error: "Title cannot be empty." };
-  }
-  if (trimmedTitle.length > 150) {
-    return { error: "Title cannot be longer than 150 characters." };
-  }
+//   const trimmedTitle = title.trim();
+//   if (trimmedTitle.length === 0) {
+//     return { error: "Title cannot be empty." };
+//   }
+//   if (trimmedTitle.length > 150) {
+//     return { error: "Title cannot be longer than 150 characters." };
+//   }
 
-  try {
-    const updateResult = await prisma.chat.updateMany({
-      where: {
-        id: chatId,
-        userId: userId,
-      },
-      data: {
-        title: trimmedTitle,
-      },
-    });
+//   try {
+//     const updateResult = await prisma.chat.updateMany({
+//       where: {
+//         id: chatId,
+//         userId: userId,
+//       },
+//       data: {
+//         title: trimmedTitle,
+//       },
+//     });
 
-    if (updateResult.count === 0) {
-      return {
-        error: "Chat not found or you don't have permission to update it.",
-      };
-    }
+//     if (updateResult.count === 0) {
+//       return {
+//         error: "Chat not found or you don't have permission to update it.",
+//       };
+//     }
 
-    revalidatePath(`/characters/${characterId}`);
+//     revalidatePath(`/characters/${characterId}`);
 
-    return { success: true, newTitle: trimmedTitle };
-  } catch (error) {
-    console.error("Error updating chat title:", error);
-    return { error: "An unexpected error occurred while updating the title." };
-  }
-}
+//     return { success: true, newTitle: trimmedTitle };
+//   } catch (error) {
+//     console.error("Error updating chat title:", error);
+//     return { error: "An unexpected error occurred while updating the title." };
+//   }
+// }
 
 export async function rateMessageAction({
   messageId,
@@ -638,7 +694,6 @@ export const submitFeedbackAction = async ({
     return { error: "Unauthorized" };
   }
 
-  // Validate feedback payload
   const parseResult = feedbackSchema.safeParse({ tags, details });
   if (!parseResult.success) {
     return {
@@ -648,7 +703,6 @@ export const submitFeedbackAction = async ({
   }
 
   try {
-    // First, verify the user owns the message they are giving feedback on
     const message = await prisma.message.findFirst({
       where: {
         id: messageId,
@@ -675,9 +729,11 @@ export const submitFeedbackAction = async ({
     console.error("Error submitting feedback:", error);
     return { error: "An unexpected error occurred while submitting feedback." };
   }
-}
+};
 
-export const getLast10ChatsWithCharacters = async () => {
+export const getLastXChatsWithCharacters = async (x=10) => {
+  if (typeof x !== "number" || x <= 0) x = 10
+
   const userId = await getUserIdFromSession();
   if (!userId) {
     return [];
@@ -686,9 +742,48 @@ export const getLast10ChatsWithCharacters = async () => {
   return await prisma.chat.findMany({
     where: { userId },
     orderBy: { lastMessageAt: "desc" },
-    take: 10,
+    take: x,
     include: {
       character: true,
     },
   });
 };
+
+export async function getPaginatedChats(page: number, limit: number) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return [];
+  }
+
+  const skip = (page - 1) * limit;
+
+  return prisma.chat.findMany({
+    where: {
+      userId,
+      messages: {
+        some: {}, // Ensure the chat is not empty
+      },
+    },
+    orderBy: {
+      lastMessageAt: "desc",
+    },
+    take: limit,
+    skip: skip,
+    select: {
+      id: true,
+      title: true,
+      lastMessageAt: true,
+      character: {
+        select: {
+          id: true,
+          name: true,
+          image: true,
+          icon: true,
+        },
+      },
+      _count: {
+        select: { messages: true },
+      },
+    },
+  });
+}

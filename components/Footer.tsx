@@ -11,19 +11,25 @@ export const Footer = () => {
         </p>
         <div className="order-1 sm:order-2 flex gap-6">
           <Link
-            href="#"
+            href="/privacy"
             className="hover:text-primary-dark hover:dark:text-primary-light transition-colors"
           >
             Privacy
           </Link>
           <Link
-            href="#"
+            href="/terms"
             className="hover:text-primary-dark hover:dark:text-primary-light transition-colors"
           >
             Terms
           </Link>
           <Link
-            href="#"
+            href="/about"
+            className="hover:text-primary-dark hover:dark:text-primary-light transition-colors"
+          >
+            About
+          </Link>
+          <Link
+            href="/contact"
             className="hover:text-primary-dark hover:dark:text-primary-light transition-colors"
           >
             Contact

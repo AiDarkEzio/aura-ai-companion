@@ -2,7 +2,7 @@
 
 import { Chat } from "@/components/Chat";
 import { getChatForUser } from "@/app/actions/chat-actions";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Message as ClientMessage } from "@/lib/types";
 import { MessageRating } from "@/app/generated/prisma";
 import { ChatHeader } from "@/components/Header";
@@ -15,8 +15,13 @@ export default async function ChatPage({
   params: Promise<{ chatId: string }>;
 }) {
   const { chatId } = await params;
+  const userId = await getUserIdFromSession();
+  
+  if (!userId) {
+    redirect("/login");
+  }
   const chatWithDetails = await getChatForUser(chatId);
-  const user = await prisma.user.findUnique({ where: { id: (await getUserIdFromSession()) } })
+  const user = await prisma.user.findUnique({ where: { id: userId } });
 
   if (!chatWithDetails || !user) {
     notFound();
@@ -35,7 +40,7 @@ export default async function ChatPage({
 
   return (
     <main className="flex max-h-screen h-screen flex-col">
-      <ChatHeader character={character} chat={chatWithDetails} />
+      <ChatHeader character={character} chat={chatWithDetails}/>
       <Chat
         character={character}
         currentUser={user}

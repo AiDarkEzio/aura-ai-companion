@@ -3,19 +3,15 @@
 
 import Link from "next/link";
 // Combined and added necessary lucide-react imports
-import {
-  Moon,
-  Sun,
-  Laptop,
-  MoreVertical,
-} from "lucide-react";
+import { Moon, Sun, Laptop, MoreVertical, Brain } from "lucide-react";
 import { useTheme } from "./ThemeProvider"; // Assuming this path is correct relative to Header.tsx
 import { useEffect, useState } from "react";
 import { Theme } from "@/app/generated/prisma"; // Assuming this path is correct
 import { Character } from "@/app/generated/prisma"; // Assuming this path is correct
 import { ChatWithDetails } from "@/app/actions/chat-actions";
-import { useChatHistory } from "@/contexts/ChatHistoryContext";
+import { useAppContext } from "@/contexts/AppContext";
 import { Avatar } from "./Avatar";
+import { MemoryManagementModal } from "./MemoryManagementModal";
 
 export const Header = () => {
   const { theme, setTheme } = useTheme();
@@ -95,62 +91,86 @@ export const Header = () => {
 };
 
 export const AppHeader = () => {
+  const { user } = useAppContext(); 
+
   return (
-    <header className={`h-[4rem] max-h-[4rem] w-full bg-transparent py-3 `}>
-      {/* Corrected typo dar: to dark: below */}
+    <header className={`h-[4rem] max-h-[4rem] w-full bg-transparent py-3 px-6`}>
       <p className="h-full w-full">
         <span className="text-2xl mr-1 dark:text-dark-text-secondary text-light-text-secondary font-bold">
           Welcome,
         </span>{" "}
         <span className="text-lg dark:text-dark-text-default text-light-text-default font-semibold">
-          Subhadra Poshitha
+          {user.name || "User"}
         </span>
       </p>
     </header>
   );
 };
 
-export const ChatHeader = ({ character, chat }: { character: Character, chat: ChatWithDetails }) => {
-  const [title, setTitle] = useState<string>(chat?.title || character.description || character.characterType);
+export const ChatHeader = ({
+  character,
+  chat,
+}: {
+  character: Character;
+  chat: ChatWithDetails;
+}) => {
+  const [title, setTitle] = useState<string>(
+    chat?.title || character.description || character.characterType
+  );
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const { chatHistory } = useAppContext();
 
-    const { chatHistory } = useChatHistory();
-  
-    useEffect(() => {
-      const matchingChatInHistory = chatHistory.find((c) => c.id === chat.id);
-      if (!matchingChatInHistory) return;
-      setTitle((prevTitle) => matchingChatInHistory.title || prevTitle);
-    }, [chatHistory, chat]);
+  useEffect(() => {
+    const matchingChatInHistory = chatHistory.find((c) => c.id === chat.id);
+    if (!matchingChatInHistory) return;
+    setTitle((prevTitle) => matchingChatInHistory.title || prevTitle);
+  }, [chatHistory, chat]);
 
   return (
-    <header className="h-[4rem] max-h-[4rem] w-full bg-background/70 backdrop-blur-md py-3 px-4 flex items-center justify-between border-b dark:border-dark-border/50 border-light-border/50">
-      <Link
-        href={"/characters/"+character.id}
-        className="flex items-center space-x-3 hover:cursor-pointer"
-      >
-        <div className="flex-shrink-0">
-          <Avatar avatarName={character.name} avatarSrc={character.image} iconName={character.icon} size={36} />
-        </div>
-        <div className="flex flex-col">
-          <h1 className="text-md font-semibold leading-tight dark:text-dark-text-default text-light-text-default">
-            {character.name}
-          </h1>
-          {/* Display character description as a short tagline. Tailwind's 'truncate' handles overflow. */}
+    <>
+      {showMemoryModal && (
+        <MemoryManagementModal
+          characterId={character.id}
+          characterName={character.name}
+          onClose={() => setShowMemoryModal(false)}
+        />
+      )}
+      <header className="h-[4rem] max-h-[4rem] w-full bg-background/70 backdrop-blur-md py-3 px-4 flex items-center justify-between border-b dark:border-dark-border/50 border-light-border/50">
+        <Link
+          href={"/characters/" + character.id}
+          className="flex items-center space-x-3 hover:cursor-pointer"
+        >
+          <div className="flex-shrink-0">
+            <Avatar
+              avatarName={character.name}
+              avatarSrc={character.image}
+              iconName={character.icon}
+              size={36}
+            />
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-md font-semibold leading-tight dark:text-dark-text-default text-light-text-default">
+              {character.name}
+            </h1>
+            {/* Display character description as a short tagline. Tailwind's 'truncate' handles overflow. */}
             <p className="text-xs dark:text-dark-text-secondary text-light-text-secondary truncate max-w-[200px] sm:max-w-[250px] md:max-w-[300px] leading-tight">
               {title}
             </p>
+          </div>
+        </Link>
+
+        {/* Optional: Placeholder for action buttons (e.g., settings, character info modal) */}
+
+        <div className="flex items-center space-x-2">
+          <button
+            aria-label="Manage Memories"
+            onClick={() => setShowMemoryModal(true)}
+            className="p-2 rounded-full hover:bg-light-surface-hover dark:hover:bg-dark-surface-hover transition-colors hover:cursor-pointer"
+          >
+            <Brain className="w-5 h-5 dark:text-dark-text-secondary text-light-text-secondary" />
+          </button>
         </div>
-      </Link>
-
-      {/* Optional: Placeholder for action buttons (e.g., settings, character info modal) */}
-
-      <div className="flex items-center">
-        <button
-          aria-label="More options"
-          className="p-2 rounded-full hover:bg-light-surface-hover dark:hover:bg-dark-surface-hover transition-colors"
-        >
-          <MoreVertical className="w-5 h-5 dark:text-dark-text-secondary text-light-text-secondary" />
-        </button>
-      </div>
-    </header>
+      </header>
+    </>
   );
 };

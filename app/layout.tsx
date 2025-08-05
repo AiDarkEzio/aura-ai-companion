@@ -3,8 +3,6 @@ import type { Metadata } from "next";
 import { Toaster } from "sonner";
 import { Inter, Fredoka } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { SettingsModalProvider } from "@/contexts/SettingsModalContext";
-import SettingsModal from "@/components/SettingsModal";
 import "./globals.css";
 import { getUserThemePreference } from "./actions/preferences-actions";
 
@@ -36,13 +34,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} ${fredoka.variable} font-sans`}>
+      <body className={`${inter.variable} ${fredoka.variable} font-sans bg-light-bg dark:bg-dark-bg`}>
         <ThemeProvider initialTheme={initialTheme}>
-          <SettingsModalProvider>
-            <Toaster closeButton position="top-right" richColors />
-            <SettingsModal />
-            {children}
-          </SettingsModalProvider>
+          <Toaster closeButton position="top-right" richColors />
+          {children}
         </ThemeProvider>
       </body>
     </html>

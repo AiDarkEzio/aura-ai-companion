@@ -1,3 +1,5 @@
+// prisma/seed.ts
+
 import {
   PrismaClient,
   PlanType,
@@ -7,11 +9,52 @@ import {
   Theme,
   Role,
   AITone,
+  CreditTransactionType,
 } from "../app/generated/prisma";
 import charactersData from "../data/characters.json";
 import scenesData from "../data/scenes.json"; // 1. Import scene data
 
 const prisma = new PrismaClient();
+
+const plansData = [
+  {
+    id: PlanType.FREE,
+    name: "Free",
+    price: 0,
+    creditsPerMonth: 300,
+    maxCharacters: 3,
+    features: [
+      "BASIC_MODEL",
+      "NO_ADS"
+    ],
+  },
+  {
+    id: PlanType.PRO,
+    name: "Pro",
+    price: 999, // $9.99
+    creditsPerMonth: 6000,
+    maxCharacters: 25,
+    features: [
+      "ADVANCED_MODEL", 
+      "CUSTOM_INSTRUCTIONS", 
+      "ENHANCED_MEMORY",
+      "NO_ADS"
+    ],
+  },
+  {
+    id: PlanType.ULTIMATE,
+    name: "Ultimate",
+    price: 1999, // $19.99
+    creditsPerMonth: 30000,
+    maxCharacters: null, // Unlimited
+    features: [
+      "ADVANCED_MODEL", 
+      "CUSTOM_INSTRUCTIONS",
+      "NO_ADS",
+      "PRIORITY_SUPPORT",
+    ],
+  },
+];
 
 // Data is inlined for portability
 const mainUserData = {
@@ -40,8 +83,7 @@ const mainUserData = {
     company: "WorkOS",
   },
   subscription: {
-    currentPlan: "PRO" as PlanType,
-    nextBillingDate: "2024-12-01T10:00:00Z",
+    nextBillingDate: "2025-09-01T10:00:00Z",
     paymentMethod: "Visa",
     paymentMethodLast4: "4242",
   },
@@ -130,19 +172,30 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.character.deleteMany();
   await prisma.tag.deleteMany();
-  await prisma.scene.deleteMany(); // 2. Delete existing scenes
+  await prisma.scene.deleteMany();
+  await prisma.plan.deleteMany();
   console.log("🗑️ Previous data deleted.");
+
+  console.log("💎 Seeding Plans...");
+  await prisma.plan.createMany({
+    data: plansData,
+  });
+  console.log(` > Created ${plansData.length} plans.`);
+
+  const proPlanCredits = plansData.find(
+    (p) => p.id === PlanType.PRO
+  )!.creditsPerMonth;
 
   const mainUser = await prisma.user.create({
     data: {
       email: mainUserData.account.email,
       name: mainUserData.profile.fullName,
-      image: "/users/default-user-02.jpg",
+      image: "/users/default-user-01.jpg",
       username: mainUserData.profile.username,
       role: Role.ADMIN,
+      credits: proPlanCredits,
       profile: {
         create: {
-          fullName: mainUserData.profile.fullName,
           preferredName: mainUserData.profile.preferredName,
           bio: mainUserData.profile.bio,
           pronouns: mainUserData.profile.pronouns,
@@ -155,6 +208,7 @@ async function main() {
         create: {
           ...mainUserData.subscription,
           nextBillingDate: new Date(mainUserData.subscription.nextBillingDate),
+          planId: PlanType.PRO,
         },
       },
     },
@@ -164,6 +218,16 @@ async function main() {
     `👤 Created main user:${mainUser.id} ${mainUser.profile?.preferredName} (${mainUser.email})`
   );
 
+  await prisma.creditTransaction.create({
+    data: {
+      userId: mainUser.id,
+      amount: proPlanCredits,
+      type: CreditTransactionType.MONTHLY_ALLOWANCE,
+      description: "PRO Plan initial grant",
+    },
+  });
+  console.log(` > Granted ${mainUser.credits} credits to the main user.`);
+
   const creatorIds = [
     ...new Set(
       charactersData
@@ -172,6 +236,7 @@ async function main() {
     ),
   ];
   const userCreatorMap = new Map<string, string>();
+  const defaultWelcomeCredits = 100;
 
   for (const creatorId of creatorIds) {
     const newUser = await prisma.user.create({
@@ -182,7 +247,19 @@ async function main() {
       },
     });
     userCreatorMap.set(creatorId, newUser.id);
-    console.log(`👤 Created placeholder user: ${newUser.email}`);
+
+    await prisma.creditTransaction.create({
+      data: {
+        userId: newUser.id,
+        amount: defaultWelcomeCredits,
+        type: CreditTransactionType.INITIAL_GRANT,
+        description: "Welcome bonus",
+      },
+    });
+
+    console.log(
+      `👤 Created placeholder user: ${newUser.email} with ${defaultWelcomeCredits} credits.`
+    );
   }
 
   console.log("🏷️ Creating tags...");

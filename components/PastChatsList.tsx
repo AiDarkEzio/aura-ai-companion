@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { deleteChatAction } from "@/app/actions/chat-actions";
 import Link from "next/link";
-import { useChatHistory } from "@/contexts/ChatHistoryContext";
+import { useAppContext } from "@/contexts/AppContext";
 
 type ChatItem = {
   id: string;
@@ -24,7 +24,7 @@ export const PastChatsList = ({
 }) => {
   const [chats, setChats] = useState(initialChats);
   const [isPending, startTransition] = useTransition();
-  const { refreshChatHistory } = useChatHistory();
+  const { refreshChatHistory } = useAppContext();
 
   const handleDelete = (chatIdToDelete: string) => {
     if (
@@ -43,7 +43,7 @@ export const PastChatsList = ({
 
       if (result?.error) {
         toast.error(result.error);
-        setChats(originalChats); // Rollback on error
+        setChats(originalChats);
       } else {
         toast.success("Chat deleted successfully.");
         await refreshChatHistory();

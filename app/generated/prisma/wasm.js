@@ -128,6 +128,7 @@ exports.Prisma.UserScalarFieldEnum = {
   image: 'image',
   username: 'username',
   role: 'role',
+  credits: 'credits',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -166,7 +167,6 @@ exports.Prisma.VerificationRequestScalarFieldEnum = {
 
 exports.Prisma.ProfileScalarFieldEnum = {
   id: 'id',
-  fullName: 'fullName',
   preferredName: 'preferredName',
   bio: 'bio',
   pronouns: 'pronouns',
@@ -197,13 +197,32 @@ exports.Prisma.PreferencesScalarFieldEnum = {
 
 exports.Prisma.SubscriptionScalarFieldEnum = {
   id: 'id',
-  currentPlan: 'currentPlan',
   nextBillingDate: 'nextBillingDate',
   paymentMethod: 'paymentMethod',
   paymentMethodLast4: 'paymentMethodLast4',
   stripeCustomerId: 'stripeCustomerId',
   stripeSubscriptionId: 'stripeSubscriptionId',
-  userId: 'userId'
+  userId: 'userId',
+  planId: 'planId'
+};
+
+exports.Prisma.PlanScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  price: 'price',
+  creditsPerMonth: 'creditsPerMonth',
+  maxCharacters: 'maxCharacters',
+  features: 'features'
+};
+
+exports.Prisma.CreditTransactionScalarFieldEnum = {
+  id: 'id',
+  amount: 'amount',
+  description: 'description',
+  type: 'type',
+  createdAt: 'createdAt',
+  userId: 'userId',
+  messageId: 'messageId'
 };
 
 exports.Prisma.SceneScalarFieldEnum = {
@@ -296,6 +315,18 @@ exports.Prisma.MessageScalarFieldEnum = {
   feedback: 'feedback'
 };
 
+exports.Prisma.ContactSubmissionScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  email: 'email',
+  subject: 'subject',
+  message: 'message',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  userId: 'userId'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -332,7 +363,16 @@ exports.Theme = exports.$Enums.Theme = {
 exports.PlanType = exports.$Enums.PlanType = {
   FREE: 'FREE',
   PRO: 'PRO',
-  ENTERPRISE: 'ENTERPRISE'
+  ULTIMATE: 'ULTIMATE'
+};
+
+exports.CreditTransactionType = exports.$Enums.CreditTransactionType = {
+  INITIAL_GRANT: 'INITIAL_GRANT',
+  MONTHLY_ALLOWANCE: 'MONTHLY_ALLOWANCE',
+  PURCHASE: 'PURCHASE',
+  MESSAGE_COST: 'MESSAGE_COST',
+  IMAGE_GENERATION: 'IMAGE_GENERATION',
+  REFUND: 'REFUND'
 };
 
 exports.CharacterType = exports.$Enums.CharacterType = {
@@ -368,6 +408,12 @@ exports.MessageRating = exports.$Enums.MessageRating = {
   BAD: 'BAD'
 };
 
+exports.ContactStatus = exports.$Enums.ContactStatus = {
+  PENDING: 'PENDING',
+  IN_PROGRESS: 'IN_PROGRESS',
+  RESOLVED: 'RESOLVED'
+};
+
 exports.Prisma.ModelName = {
   User: 'User',
   Account: 'Account',
@@ -377,6 +423,8 @@ exports.Prisma.ModelName = {
   UserPersona: 'UserPersona',
   Preferences: 'Preferences',
   Subscription: 'Subscription',
+  Plan: 'Plan',
+  CreditTransaction: 'CreditTransaction',
   Scene: 'Scene',
   Character: 'Character',
   UserCharacterMemory: 'UserCharacterMemory',
@@ -385,7 +433,8 @@ exports.Prisma.ModelName = {
   ExampleDialogue: 'ExampleDialogue',
   Chat: 'Chat',
   ChatSettings: 'ChatSettings',
-  Message: 'Message'
+  Message: 'Message',
+  ContactSubmission: 'ContactSubmission'
 };
 
 /**

@@ -6,8 +6,6 @@ import { Character, Prisma, Scene  } from "@/app/generated/prisma";
 import { getUserIdFromSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { CharacterSearchFilter } from "@/lib/types";
-import { GoogleGenAI } from "@google/genai";
-import { GEMINI_15_FLASH_MODEL_NAME, GetGeminiApiKey } from "@/lib/llm";
 
 export async function likeCharacterAction(characterId: string) {
   const userId = await getUserIdFromSession();
@@ -279,7 +277,7 @@ export async function getCharacter(id: string): Promise<Character | null> {
   }
   catch (error) {
     console.error("Error fetching character data:", error);
-    throw new Error("Failed to fetch character data.");
+    return null;
   }
 }
 
@@ -352,89 +350,304 @@ export async function searchCharacters(
   }
 }
 
-interface ExtractMemoriesParams {
-  chatId: string;
-  userId: string;
-  characterId: string;
+// interface ExtractMemoriesParams {
+//   chatId: string;
+//   userId: string;
+//   characterId: string;
+// }
+
+export async function getCharactersWithMemories() {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return []; // Or throw an error, depending on desired behavior for unauthenticated users
+  }
+  try {
+    const memories = await prisma.userCharacterMemory.findMany({
+      where: { userId },
+      include: {
+        character: true,
+      },
+    });
+    // Return unique characters that have memories
+    const uniqueCharacters = memories.map(m => m.character).filter((char, index, self) =>
+      index === self.findIndex((c) => c.id === char.id)
+    );
+    return uniqueCharacters;
+  } catch (error) {
+    console.error("Error fetching characters with memories:", error);
+    throw new Error("Failed to fetch characters with memories.");
+  }
 }
 
-// TODO: also send past user character Memories to the LLM From database that can be use to update prvious memories accroding to chat
-export async function extractUserCharacterMemories({ chatId, userId, characterId }: ExtractMemoriesParams) {
-    console.log(`Starting memory extraction for chat ${chatId}`);
-    try {
-        const chat = await prisma.chat.findUnique({
-            where: { id: chatId, userId },
-            include: {
-                messages: {
-                    orderBy: { sentAt: 'desc' },
-                    take: 20 // Get the last 20 messages for context
-                }
-            }
-        });
+export async function getUserCharacterMemories(characterId: string) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return { error: "Unauthorized" };
+  }
 
-        if (!chat || chat.messages.length === 0) {
-            console.log(`Memory extraction skipped for chat ${chatId}: No messages found.`);
-            return;
-        }
+  try {
+    const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    });
+    return { success: true, memories: userCharacterMemory?.memories || [] };
+  } catch (error) {
+    console.error("Error fetching user character memories:", error);
+    return { error: "Failed to fetch user character memories." };
+  }
+}
 
-        const conversation = chat.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+export async function addUserCharacterMemory(characterId: string, memory: string) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return { error: "Unauthorized" };
+  }
 
-        const existingMemory = await prisma.userCharacterMemory.findUnique({
-            where: { userId_characterId: { userId, characterId } }
-        });
+  if (!memory.trim()) {
+    return { error: "Memory cannot be empty." };
+  }
 
-        const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
+  try {
+    const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    });
 
-        const prompt = `
-You are a memory consolidation AI.
-Based on the provided previous memories and the latest conversation, identify new facts about the user and update existing facts if new information contradicts them.
-Output the final, consolidated list of facts as a JSON array of strings.
-
-Previous Memories:
-${existingMemory ? JSON.stringify(existingMemory.memories) : '[]'}
-
-Latest Conversation:
-${conversation}`;
-
-        const result = await genAI.models.generateContent({
-            model: GEMINI_15_FLASH_MODEL_NAME,
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-        });
-
-        const responseText = result.text;
-        if (!responseText) {
-            console.log(`Memory extraction failed for chat ${chatId}: No response from LLM.`);
-            return;
-        }
-
-        let newMemories: string[] = [];
-        try {
-            // The model might return a markdown code block
-            const jsonString = responseText.replace(/```json\n?/, '').replace(/```$/, '');
-            newMemories = JSON.parse(jsonString);
-            if (!Array.isArray(newMemories)) {
-                throw new Error("LLM did not return a valid JSON array.");
-            }
-        } catch (e) {
-            console.error(`Error parsing memories for chat ${chatId}:`, e);
-            return;
-        }
-
-
-        if (newMemories.length > 0) {
-            const updatedMemories = [...new Set(newMemories)]; // Use Set to ensure no duplicates
-
-            await prisma.userCharacterMemory.upsert({
-                where: { userId_characterId: { userId, characterId } },
-                update: { memories: updatedMemories, updatedAt: new Date() },
-                create: { userId, characterId, memories: updatedMemories }
-            });
-            console.log(`Successfully extracted and saved ${newMemories.length} memories for user ${userId} and character ${characterId}.`);
-        } else {
-            console.log(`No new memories to extract for chat ${chatId}.`);
-        }
-
-    } catch (error) {
-        console.error(`Error extracting user memories for chat ${chatId}:`, error);
+    let updatedMemories: string[];
+    if (userCharacterMemory) {
+      const memoriesSet = new Set(userCharacterMemory.memories);
+      if (memoriesSet.has(memory)) {
+        return { success: false, error: "Memory already exists." };
+      }
+      memoriesSet.add(memory);
+      updatedMemories = Array.from(memoriesSet);
+    } else {
+      updatedMemories = [memory];
     }
+
+    await prisma.userCharacterMemory.upsert({
+      where: { userId_characterId: { userId, characterId } },
+      update: { memories: updatedMemories, updatedAt: new Date() },
+      create: { userId, characterId, memories: updatedMemories },
+    });
+
+    revalidatePath(`/memories`);
+    revalidatePath(`/memories?characterId=${characterId}`);
+    revalidatePath(`/chat/${characterId}`); // Revalidate chat page as well
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error adding user character memory:", error);
+    return { error: "Failed to add user character memory." };
+  }
 }
+
+export async function deleteUserCharacterMemory(characterId: string, memoryToDelete: string) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return { error: "Unauthorized" };
+  }
+
+  try {
+    const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    });
+
+    if (!userCharacterMemory) {
+      return { success: false, error: "Memories not found for this character." };
+    }
+
+    const updatedMemories = userCharacterMemory.memories.filter(
+      (mem) => mem !== memoryToDelete
+    );
+
+    await prisma.userCharacterMemory.update({
+      where: { userId_characterId: { userId, characterId } },
+      data: { memories: updatedMemories, updatedAt: new Date() },
+    });
+
+    revalidatePath(`/memories`);
+    revalidatePath(`/memories?characterId=${characterId}`);
+    revalidatePath(`/chat/${characterId}`); // Revalidate chat page as well
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting user character memory:", error);
+    return { error: "Failed to delete user character memory." };
+  }
+}
+
+export async function updateUserCharacterMemory(characterId: string, oldMemory: string, newMemory: string) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return { error: "Unauthorized" };
+  }
+
+  if (!newMemory.trim()) {
+    return { error: "New memory cannot be empty." };
+  }
+
+  try {
+    const userCharacterMemory = await prisma.userCharacterMemory.findUnique({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    });
+
+    if (!userCharacterMemory) {
+      return { success: false, error: "Memories not found for this character." };
+    }
+
+    const updatedMemories = userCharacterMemory.memories.map((mem) =>
+      mem === oldMemory ? newMemory : mem
+    );
+
+    // Check for duplicates after update
+    if (new Set(updatedMemories).size !== updatedMemories.length) {
+      return { success: false, error: "Updated memory creates a duplicate." };
+    }
+
+    await prisma.userCharacterMemory.update({
+      where: { userId_characterId: { userId, characterId } },
+      data: { memories: updatedMemories, updatedAt: new Date() },
+    });
+
+    revalidatePath(`/memories`);
+    revalidatePath(`/memories?characterId=${characterId}`);
+    revalidatePath(`/chat/${characterId}`); // Revalidate chat page as well
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating user character memory:", error);
+    return { error: "Failed to update user character memory." };
+  }
+}
+
+export async function resetUserCharacterMemories(characterId: string) {
+  const userId = await getUserIdFromSession();
+  if (!userId) {
+    return { error: "Unauthorized" };
+  }
+
+  try {
+    await prisma.userCharacterMemory.delete({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    });
+
+    revalidatePath(`/memories`);
+    revalidatePath(`/memories?characterId=${characterId}`);
+    revalidatePath(`/chat/${characterId}`); // Revalidate chat page as well
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error resetting user character memories:", error);
+    return { error: "Failed to reset user character memories." };
+  }
+}
+
+// interface ExtractMemoriesParams {
+//   chatId: string;
+//   userId: string;
+//   characterId: string;
+// }
+
+// export async function extractUserCharacterMemories({ chatId, userId, characterId }: ExtractMemoriesParams) {
+//     console.log(`Starting memory extraction for chat ${chatId}`);
+//     try {
+//         const chat = await prisma.chat.findUnique({
+//             where: { id: chatId, userId },
+//             include: {
+//                 messages: {
+//                     orderBy: { sentAt: 'desc' },
+//                     take: 20 // Get the last 20 messages for context
+//                 }
+//             }
+//         });
+
+//         if (!chat || chat.messages.length === 0) {
+//             console.log(`Memory extraction skipped for chat ${chatId}: No messages found.`);
+//             return;
+//         }
+
+//         const conversation = chat.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+
+//         const existingMemory = await prisma.userCharacterMemory.findUnique({
+//             where: { userId_characterId: { userId, characterId } }
+//         });
+
+//         const genAI = new GoogleGenAI({ apiKey: GetGeminiApiKey() });
+
+//         const prompt = `
+// You are a memory consolidation AI.
+// Based on the provided previous memories and the latest conversation, identify new facts about the user and update existing facts if new information contradicts them.
+// Output the final, consolidated list of facts as a JSON array of strings.
+
+// Previous Memories:
+// ${existingMemory ? JSON.stringify(existingMemory.memories) : '[]'}
+
+// Latest Conversation:
+// ${conversation}`;
+
+//         const result = await genAI.models.generateContent({
+//             model: GEMINI_15_FLASH_MODEL_NAME,
+//             contents: [{ role: "user", parts: [{ text: prompt }] }],
+//         });
+
+//         const responseText = result.text;
+//         if (!responseText) {
+//             console.log(`Memory extraction failed for chat ${chatId}: No response from LLM.`);
+//             return;
+//         }
+
+//         let newMemories: string[] = [];
+//         try {
+//             // The model might return a markdown code block
+//             const jsonString = responseText.replace(/```json\n?/, '').replace(/```$/, '');
+//             newMemories = JSON.parse(jsonString);
+//             if (!Array.isArray(newMemories)) {
+//                 throw new Error("LLM did not return a valid JSON array.");
+//             }
+//         } catch (e) {
+//             console.error(`Error parsing memories for chat ${chatId}:`, e);
+//             return;
+//         }
+
+
+//         if (newMemories.length > 0) {
+//             const updatedMemories = [...new Set(newMemories)]; // Use Set to ensure no duplicates
+
+//             await prisma.userCharacterMemory.upsert({
+//                 where: { userId_characterId: { userId, characterId } },
+//                 update: { memories: updatedMemories, updatedAt: new Date() },
+//                 create: { userId, characterId, memories: updatedMemories }
+//             });
+//             console.log(`Successfully extracted and saved ${newMemories.length} memories for user ${userId} and character ${characterId}.`);
+//         } else {
+//             console.log(`No new memories to extract for chat ${chatId}.`);
+//         }
+
+//     } catch (error) {
+//         console.error(`Error extracting user memories for chat ${chatId}:`, error);
+//     }
+// }

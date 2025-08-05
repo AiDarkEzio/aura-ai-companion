@@ -4,8 +4,14 @@ const globalForPrisma = global as unknown as {
   prisma: PrismaClient;
 };
 
-const prisma = globalForPrisma.prisma || new PrismaClient();
+let prisma: PrismaClient;
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+try {
+  prisma = globalForPrisma.prisma || new PrismaClient();
+  if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+} catch (error) {
+  console.error("Failed to initialize PrismaClient:", error);
+  throw error;
+}
 
 export default prisma;

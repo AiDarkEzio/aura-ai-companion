@@ -1,5 +1,8 @@
 -- CreateEnum
-CREATE TYPE "PlanType" AS ENUM ('FREE', 'PRO', 'ENTERPRISE');
+CREATE TYPE "PlanType" AS ENUM ('FREE', 'PRO', 'ULTIMATE');
+
+-- CreateEnum
+CREATE TYPE "CreditTransactionType" AS ENUM ('INITIAL_GRANT', 'MONTHLY_ALLOWANCE', 'PURCHASE', 'MESSAGE_COST', 'IMAGE_GENERATION', 'REFUND');
 
 -- CreateEnum
 CREATE TYPE "CharacterType" AS ENUM ('COMPANION', 'ASSISTANT', 'MENTOR', 'GAMEMASTER', 'ENTERTAINMENT');
@@ -34,6 +37,7 @@ CREATE TABLE "User" (
     "image" TEXT,
     "username" TEXT,
     "role" "Role" NOT NULL DEFAULT 'USER',
+    "credits" INTEGER NOT NULL DEFAULT 100,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -84,7 +88,6 @@ CREATE TABLE "VerificationRequest" (
 -- CreateTable
 CREATE TABLE "Profile" (
     "id" TEXT NOT NULL,
-    "fullName" TEXT,
     "preferredName" TEXT,
     "bio" TEXT,
     "pronouns" TEXT,
@@ -124,15 +127,40 @@ CREATE TABLE "Preferences" (
 -- CreateTable
 CREATE TABLE "Subscription" (
     "id" TEXT NOT NULL,
-    "currentPlan" "PlanType" NOT NULL DEFAULT 'FREE',
     "nextBillingDate" TIMESTAMP(3),
     "paymentMethod" TEXT,
     "paymentMethodLast4" TEXT,
     "stripeCustomerId" TEXT,
     "stripeSubscriptionId" TEXT,
     "userId" TEXT NOT NULL,
+    "planId" "PlanType" NOT NULL DEFAULT 'FREE',
 
     CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Plan" (
+    "id" "PlanType" NOT NULL,
+    "name" TEXT NOT NULL,
+    "price" INTEGER NOT NULL,
+    "creditsPerMonth" INTEGER NOT NULL,
+    "maxCharacters" INTEGER,
+    "features" TEXT[],
+
+    CONSTRAINT "Plan_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CreditTransaction" (
+    "id" TEXT NOT NULL,
+    "amount" INTEGER NOT NULL,
+    "description" TEXT,
+    "type" "CreditTransactionType" NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    "messageId" TEXT,
+
+    CONSTRAINT "CreditTransaction_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -300,6 +328,15 @@ CREATE UNIQUE INDEX "Subscription_stripeSubscriptionId_key" ON "Subscription"("s
 CREATE UNIQUE INDEX "Subscription_userId_key" ON "Subscription"("userId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Plan_name_key" ON "Plan"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CreditTransaction_messageId_key" ON "CreditTransaction"("messageId");
+
+-- CreateIndex
+CREATE INDEX "CreditTransaction_userId_createdAt_idx" ON "CreditTransaction"("userId", "createdAt" DESC);
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Tag_name_key" ON "Tag"("name");
 
 -- CreateIndex
@@ -337,6 +374,15 @@ ALTER TABLE "Preferences" ADD CONSTRAINT "Preferences_userId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_planId_fkey" FOREIGN KEY ("planId") REFERENCES "Plan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditTransaction" ADD CONSTRAINT "CreditTransaction_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditTransaction" ADD CONSTRAINT "CreditTransaction_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Character" ADD CONSTRAINT "Character_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -7,7 +7,6 @@ import {
   ChevronRight,
   HeartHandshake,
   Lock,
-  Mic,
   Palette,
   ShieldCheck,
 } from "lucide-react";
@@ -57,13 +56,7 @@ const featureList = [
     icon: Lock,
     title: "Secure by Default",
     description:
-      "Your data is yours. Encrypted and private. No selling, no spying.",
-  },
-  {
-    icon: Mic,
-    title: "Voice & Text Interface",
-    description:
-      "Speak naturally or type. AURA listens and responds with a voice of your choice.",
+      "Your data is yours. No selling, no spying.",
   },
 ];
 
@@ -207,11 +200,8 @@ export default function Home() {
           </p>
           <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-left">
             {[
-              "End-to-End Encryption",
               "No Data Selling",
               "Transparent Policies",
-              "Age Restricted (18+)",
-              "Proactive Moderation",
               "User-Controlled Memory",
             ].map((item) => (
               <div key={item} className="flex items-center gap-3">

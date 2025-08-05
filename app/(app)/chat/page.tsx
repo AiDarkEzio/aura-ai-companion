@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 
 export default function CharacterPage() {
-  redirect("/app");
+  redirect("/chats");
 }
 
 // import { Chat } from "@/components/Chat";

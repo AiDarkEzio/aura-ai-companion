@@ -8,8 +8,8 @@ import { getChatsForCharacter, startNewChat } from "@/app/actions/chat-actions";
 import { PastChatsList } from "@/components/PastChatsList";
 import { LikeButton } from "@/components/LikeButton";
 import { Avatar } from "@/components/Avatar";
+import { CharacterMemoryButton } from "@/components/CharacterMemoryButton";
 
-// Helper to format enum values for display (e.g., LOW -> Low)
 const formatEnumValue = (value?: string) => {
   if (!value) return "";
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
@@ -115,6 +115,12 @@ export default async function CharacterProfilePage({
                 characterId={character.id}
                 initialLikeCount={character.likeCount}
                 isInitiallyLiked={isLiked}
+              />
+            </div>
+            <div className="flex-1 sm:flex-none">
+              <CharacterMemoryButton
+                characterId={character.id}
+                characterName={character.name}
               />
             </div>
           </div>

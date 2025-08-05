@@ -1,0 +1,49 @@
+[
+  {
+    "name": "Free",
+    "price": 0,
+    "description": "For casual users to get a feel for AURA.",
+    "features": [
+      "300 credits per month",
+      "Chat with up to 3 characters",
+      "Standard AI model",
+      "No ads",
+      "Basic memory capabilities"
+    ],
+    "cta": "Get Started",
+    "variant": "secondary",
+    "isPopular": false
+  },
+  {
+    "name": "Pro",
+    "price": 9.99,
+    "description": "For enthusiasts who want deeper connections.",
+    "features": [
+      "6,000 credits per month",
+      "Chat with up to 25 characters",
+      "Advanced AI model",
+      "No ads",
+      "Custom personality instructions",
+      "Enhanced memory"
+    ],
+    "cta": "Upgrade to Pro",
+    "variant": "primary",
+    "isPopular": true
+  },
+  {
+    "name": "Ultimate",
+    "price": 19.99,
+    "description": "For power users who demand the best experience.",
+    "features": [
+      "30,000 credits per month",
+      "Unlimited characters",
+      "Advanced AI model",
+      "Custom personality instructions",
+      "No ads",
+      "Priority support"
+    ],
+    "cta": "Go Ultimate",
+    "variant": "secondary",
+    "isPopular": false
+  }
+]
